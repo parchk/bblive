@@ -1,0 +1,8 @@
+{
+	"RtmpAddress":"192.168.0.176:9993",
+	"HttpFlvAddress": "192.168.0.176:9994",
+	"LogPath":"./log/bblive.log",
+	"LogLvl":0,
+	"Srvid":1,   
+	"PProf":true
+}

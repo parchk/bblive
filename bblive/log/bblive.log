@@ -1,0 +1,34 @@
+2016/09/21 19:01:46 DEBUG rtmp ListenAndServe : 127.0.0.1:9993
+
+2016/09/26 10:24:19 DEBUG rtmp ListenAndServe : 127.0.0.1:9993
+
+2016/09/26 10:24:19 DEBUG ListenAndServerHttpFlv : 127.0.0.1:9994
+
+2016/09/26 10:30:28 DEBUG rtmp ListenAndServe : 127.0.0.1:9993
+
+2016/09/26 10:30:28 DEBUG ListenAndServerHttpFlv : 127.0.0.1:9994
+
+2016/09/26 10:31:56 DEBUG rtmp ListenAndServe : 192.168.0.176:9993
+
+2016/09/26 10:31:56 DEBUG ListenAndServerHttpFlv : 192.168.0.176:9994
+
+2016/09/27 11:27:44 DEBUG rtmp ListenAndServe : 192.168.0.176:9993
+
+2016/09/27 11:27:44 DEBUG ListenAndServerHttpFlv : 192.168.0.176:9994
+
+2016/09/27 17:52:17 DEBUG[proc.go:188] rtmp ListenAndServe : 192.168.0.176:9993
+
+2016/09/27 17:52:17 DEBUG[proc.go:188] ListenAndServerHttpFlv : 192.168.0.176:9994
+
+2016/09/27 17:53:02 DEBUG[filelogger.go:21] rtmp ListenAndServe : 192.168.0.176:9993
+
+2016/09/27 17:53:02 DEBUG[filelogger.go:21] ListenAndServerHttpFlv : 192.168.0.176:9994
+
+2016/09/27 18:42:50 DEBUG[log.go:28] rtmp ListenAndServe : 192.168.0.176:9993
+
+2016/09/27 18:42:50 DEBUG[log.go:28] ListenAndServerHttpFlv : 192.168.0.176:9994
+
+2016/09/27 18:43:17 DEBUG[main.go:34] rtmp ListenAndServe : 192.168.0.176:9993
+
+2016/09/27 18:43:17 DEBUG[main.go:42] ListenAndServerHttpFlv : 192.168.0.176:9994
+
