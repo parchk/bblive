@@ -32,3 +32,9 @@
 
 2016/09/27 18:43:17 DEBUG[main.go:42] ListenAndServerHttpFlv : 192.168.0.176:9994
 
+2016/10/17 17:54:10 [D] [main.go:28] kkk 10
+2016/10/17 17:54:10 [D] [main.go:35] rtmp ListenAndServe : 127.0.0.1:9993 
+2016/10/17 17:54:10 [D] [main.go:43] ListenAndServerHttpFlv : 127.0.0.1:9994 
+2016/10/17 17:54:56 [D] [main.go:28] kkk 10,ssssssss
+2016/10/17 17:54:56 [D] [main.go:35] rtmp ListenAndServe : 127.0.0.1:9993 
+2016/10/17 17:54:56 [D] [main.go:43] ListenAndServerHttpFlv : 127.0.0.1:9994 

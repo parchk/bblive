@@ -24,6 +24,8 @@ func init() {
 }
 
 func main() {
+
+	log.Debugf("kkk %d,%s", int32(10), "ssssssss")
 	flag.Parse()
 	err := rtmp.ListenAndServe(conf.AppConf.RtmpAddress)
 	if err != nil {
