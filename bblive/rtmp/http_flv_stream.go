@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
+	"time"
 )
 
 var (
@@ -45,13 +47,14 @@ func nsid() int {
 	return int(id)
 }
 
-func NewHttpFlvStream() (s *HttpFlvStream) {
-	s = new(HttpFlvStream)
-	s.nsid = nsid()
-	s.notify = make(chan *int, 30)
-	s.fnotify = make(chan *MediaFrame, 1000)
-	s.closed = make(chan bool)
-	return s
+func NewHttpFlvStream(streamName string) (s *HttpFlvStream) {
+	stream := new(HttpFlvStream)
+	stream.nsid = nsid()
+	stream.notify = make(chan *int, 30)
+	stream.fnotify = make(chan *MediaFrame, 1000)
+	stream.closed = make(chan bool)
+	stream.streamName = streamName
+	return stream
 }
 
 func (s *HttpFlvStream) SetObj(o *StreamObject) {
@@ -70,6 +73,18 @@ func (s *HttpFlvStream) isClosed() bool {
 }
 
 func (s *HttpFlvStream) Close() error {
+
+	pc, file, line, ok := runtime.Caller(1)
+
+	log.Debug("HttpFlvStream :", pc)
+	log.Debug("HttpFlvStream :", file)
+	log.Debug("HttpFlvStream :", line)
+	log.Debug("HttpFlvStream :", ok)
+	f := runtime.FuncForPC(pc)
+	log.Debug("HttpFlvStream :", f.Name())
+
+	log.Debug("HttpFlvStream Close streamName :", s.streamName)
+
 	if s.isClosed() {
 		return nil
 	}
@@ -107,7 +122,7 @@ func (s *HttpFlvStream) FNotify(frame *MediaFrame) error {
 	case s.fnotify <- frame:
 		return nil
 	default:
-		log.Debug("romode addr?" + "buffer full")
+		log.Debug("romode addr?" + "httpflv stream fnotify buffer full")
 	}
 	return nil
 }
@@ -122,7 +137,7 @@ func (s *HttpFlvStream) Notify(idx *int) error {
 	case s.notify <- idx:
 		return nil
 	default:
-		log.Warn("romode addr?" + "buffer full")
+		log.Warn("romode addr?" + "httpflv stream notify buffer full")
 	}
 	return nil
 }
@@ -173,13 +188,15 @@ func (s *HttpFlvStream) SendTag(w http.ResponseWriter, r *http.Request, data []b
 }
 func (s *HttpFlvStream) WriteLoopF(w http.ResponseWriter, r *http.Request) {
 
-	log.Info(r.RemoteAddr, "->", r.Host, "http writeLoop running")
+	log.Info(r.RemoteAddr, "->", r.Host, "http writeLoopF running")
 
-	defer log.Info(r.RemoteAddr, "->", r.Host, "http writeLoop stopped")
+	defer log.Info(r.RemoteAddr, "->", r.Host, "http writeLoopF stopped")
 
-	w.Header().Set("Transfer-Encoding", "chunked")
+	//w.Header().Set("Transfer-Encoding", "chunked")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", "application/octet-stream")
+
+	log.Debug("http header :", w.Header())
 
 	var (
 		opened bool
@@ -201,24 +218,50 @@ func (s *HttpFlvStream) WriteLoopF(w http.ResponseWriter, r *http.Request) {
 	if obj.GetFirstAudioKeyFrame() != nil {
 		audio_key := obj.GetFirstAudioKeyFrame().Bytes()
 		s.SendTag(w, r, audio_key, RTMP_MSG_AUDIO, 0)
+	} else {
 		log.Error("!!!!!!! FirstAudioKeyFram is nil ")
 	}
+	/*
+		if obj.Icache != nil {
+			icache := obj.Icache.Bytes()
+			s.SendTag(w, r, icache, RTMP_MSG_VIDEO, obj.Icache.Timestamp)
+			log.Error("!!!!!!! Icache send :", obj.name)
+		} else {
+			log.Error("!!!!!!! Icache is nil")
+		}
+	*/
+
+	if conf.AppConf.ICache {
+		log.Debug("HttpFlvStream ICACHE")
+		for _, f := range obj.Icache {
+			log.Debug("HttpFlvStream ICACHE Fram :", len(obj.Icache))
+			icache := f.Bytes()
+			s.SendTag(w, r, icache, RTMP_MSG_VIDEO, f.Timestamp)
+		}
+	}
+
+	log.Debug("HttpFlvStream FOR")
 
 	for {
 		select {
 		case frame, opened = <-s.fnotify:
 			if !opened {
+				log.Error("HttpFlvStream WriteLoopF !opened  return error")
 				return
 			}
+			/*
+				if s.firstIframe == nil {
 
-			if s.firstIframe == nil {
-
-				if frame.IFrame() {
-					s.firstIframe = frame
-				} else {
-					continue
+					if frame.IFrame() {
+						s.firstIframe = frame
+					} else {
+						log.Info("$$$$$$not iframe", obj.name)
+						continue
+					}
 				}
-			}
+			*/
+
+			log.Debug("HttpFlvStream write")
 
 			if frame.Type == RTMP_MSG_VIDEO {
 
@@ -232,9 +275,12 @@ func (s *HttpFlvStream) WriteLoopF(w http.ResponseWriter, r *http.Request) {
 
 				err = s.SendTag(w, r, payload, RTMP_MSG_AUDIO, frame.Timestamp)
 			}
+		case <-time.After(3 * time.Second):
+			log.Debug("HttpFlvStream timeout")
 		}
 
 		if err != nil {
+			log.Error("HttpFlvStream WriteLoopF error break err :", err)
 			break
 		}
 
@@ -264,11 +310,15 @@ func (s *HttpFlvStream) WriteLoop(w http.ResponseWriter, r *http.Request) {
 	if obj.GetFirstVideoKeyFrame() != nil {
 		key := obj.GetFirstVideoKeyFrame().Bytes()
 		s.SendTag(w, r, key, RTMP_MSG_VIDEO, 0)
+	} else {
+		log.Error("!!!!!!! FirstVideoKeyFram is nil ")
 	}
 
 	if obj.GetFirstAudioKeyFrame() != nil {
 		audio_key := obj.GetFirstAudioKeyFrame().Bytes()
 		s.SendTag(w, r, audio_key, RTMP_MSG_AUDIO, 0)
+	} else {
+		log.Error("!!!!!!! FirstAudioKeyFram is nil ")
 	}
 
 	for {

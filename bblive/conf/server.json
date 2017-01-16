@@ -4,5 +4,6 @@
 	"LogPath":"./log/bblive.log",
 	"LogLvl":7,
 	"Srvid":1,   
-	"PProf":true
+	"PProf":true,
+	"GOPCache":true
 }

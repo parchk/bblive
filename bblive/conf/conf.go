@@ -16,6 +16,8 @@ var AppConf struct {
 	LogLvl         int    `json:"LogLvl"`
 	Srvid          int    `json:"Srvid"`
 	PProf          bool   `json:"PProf"`
+	GOPCache       bool   `json:"GOPCache"`
+	ICache         bool   `json:"ICache"`
 }
 
 var (
@@ -40,4 +42,6 @@ func init() {
 		fmt.Printf("%v", err)
 		os.Exit(3)
 	}
+
+	fmt.Println("conf : ", AppConf)
 }

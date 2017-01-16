@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 	//"sync/atomic"
+	"bbllive/conf"
 	"bbllive/log"
 	"time"
 )
@@ -166,6 +167,7 @@ type StreamObject struct {
 	httpsublock sync.RWMutex
 	httpsubs    []NetStream
 	fnotify     chan *MediaFrame
+	Icache      []*MediaFrame
 }
 
 func new_streamObject(sid string, timeout time.Duration, record bool, csize int) (obj *StreamObject, err error) {
@@ -177,10 +179,16 @@ func new_streamObject(sid string, timeout time.Duration, record bool, csize int)
 		notify:  make(chan *int, csize*100),
 		csize:   csize,
 		fnotify: make(chan *MediaFrame, 10000),
+		//Icache:  make([]*MediaFrame, 10000),
 	}
 	addObject(obj)
-	//go obj.loop(timeout)
-	go obj.loopf(timeout)
+
+	if conf.AppConf.GOPCache {
+		go obj.loop(timeout)
+	} else {
+		go obj.loopf(timeout)
+	}
+
 	return obj, nil
 }
 
@@ -219,6 +227,19 @@ func (m *StreamObject) loopf(timeout time.Duration) {
 		case frame, opened = <-m.fnotify:
 			if !opened {
 				return
+			}
+
+			if conf.AppConf.ICache {
+				if frame.Type == RTMP_MSG_VIDEO {
+					if frame.IFrame() && len(m.Icache) <= 0 {
+						m.Icache = append(m.Icache, frame)
+					} else if frame.IFrame() && len(m.Icache) > 0 {
+						m.Icache = append(m.Icache[0:0], m.Icache[0:0]...)
+						m.Icache = append(m.Icache, frame)
+					} else if !frame.IFrame() && len(m.Icache) > 0 {
+						m.Icache = append(m.Icache, frame)
+					}
+				}
 			}
 
 			////hsh add
@@ -297,31 +318,38 @@ func (m *StreamObject) WriteFrame(s *MediaFrame) (err error) {
 	m.duration = s.Timestamp
 
 	if s.VideoCodecID == 7 {
-		log.Debug("***************dfdfdfdf*************")
 		payload := s.Payload.Bytes()
-
-		log.Debug("__________________", uint8(payload[1]))
 		if uint8(payload[1]) == 0 {
+			log.Debug("--------- video first key :", m.name)
 			m.firstVideoKeyFrame = s
 			m.streamid = s.StreamId
 		}
 	}
 
+	if s.Type == RTMP_MSG_AUDIO {
+
+		payload := s.Payload.Bytes()
+		if uint8(payload[1]) == 0 {
+			log.Debug("&&&&&&&&&& audio first key:", m.name)
+			m.firstAudioKeyFrame = s
+		}
+	}
+
 	if s.Type == RTMP_MSG_VIDEO && s.IFrame() && m.firstVideoKeyFrame == nil {
-		log.Info(">>>>", s)
+		log.Debug(">>>>", s)
 		m.firstVideoKeyFrame = s
 		m.streamid = s.StreamId
 		m.lock.Unlock()
 		return
 	}
 	if s.Type == RTMP_MSG_AUDIO && m.firstAudioKeyFrame == nil {
-		log.Info(">>>>", s)
+		log.Debug(">>>>", s)
 		m.firstAudioKeyFrame = s
 		m.lock.Unlock()
 		return
 	}
 	if s.Type == RTMP_MSG_AMF_META && m.metaData == nil {
-		log.Info(">>>>", s)
+		log.Debug(">>>>", s)
 		m.metaData = s
 		m.lock.Unlock()
 		return
@@ -349,7 +377,7 @@ func (m *StreamObject) WriteFrame(s *MediaFrame) (err error) {
 		gop := m.gop
 		m.list = append(m.list, gop.idx)
 		m.cache[gop.idx] = gop
-		log.Info("Gop", m.name, gop.idx, gop.Len(), len(m.list))
+		log.Debug("Gop", m.name, gop.idx, gop.Len(), len(m.list))
 		m.gop = &MediaGop{gop.idx + 1, []*MediaFrame{s}, m.firstVideoKeyFrame, m.firstAudioKeyFrame, m.metaData}
 		// m.gop.chunk.wchunks = gop.chunk.wchunks
 		// m.gop.freshChunk.writeMetadata(m.metaData)
@@ -382,6 +410,7 @@ func (m *StreamObject) WriteFrame(s *MediaFrame) (err error) {
 }
 
 func (m *StreamObject) Close() {
+	log.Info(m.name, "StreamObject Close")
 	removeObject(m.name)
 	close(m.notify)
 	close(m.fnotify)
@@ -389,6 +418,7 @@ func (m *StreamObject) Close() {
 func (m *StreamObject) loop(timeout time.Duration) {
 	log.Info(m.name, "stream object is runing")
 	defer log.Info(m.name, "stream object is stopped")
+
 	var (
 		opened bool
 		idx    *int
@@ -415,7 +445,7 @@ func (m *StreamObject) loop(timeout time.Duration) {
 			nsubs = nsubs[0:0]
 			subs = m.subs[:]
 			m.sublock.Unlock()
-			log.Info("players", m.name, len(subs))
+			log.Debug("players", m.name, len(subs))
 			for _, w = range subs {
 				if err = w.Notify(idx); err != nil {
 					log.Error(w, err)
@@ -433,7 +463,7 @@ func (m *StreamObject) loop(timeout time.Duration) {
 			hnsubs = hnsubs[0:0]
 			hsubs = m.httpsubs[:]
 			m.httpsublock.Unlock()
-			log.Info("httflv players", m.name, len(hsubs))
+			log.Debug("httflv players", m.name, len(hsubs))
 			for _, h = range hsubs {
 				if herr = h.Notify(idx); herr != nil {
 					log.Error(h, herr)

@@ -1,6 +1,7 @@
 package rtmp
 
 import (
+	"bbllive/conf"
 	"bbllive/log"
 	"fmt"
 	"net/http"
@@ -30,14 +31,27 @@ func (*HttpFlvPlayHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stream := NewHttpFlvStream()
+	stream := NewHttpFlvStream(objname)
 	stream.SetObj(obj)
 
 	obj.HttpAttach(stream)
 
-	//stream.WriteLoop(w, r)
-	stream.WriteLoopF(w, r)
+	log.Debug("HttpFlvStream BeginHanle")
+
+	if conf.AppConf.GOPCache {
+		stream.WriteLoop(w, r)
+	} else {
+		log.Debug("HttpFlvStream begin write loopf")
+		stream.WriteLoopF(w, r)
+	}
+
+	log.Debug("HttpFlvStream mid")
+
 	stream.Close()
+
+	log.Debug("HttpFlvStream EndHanle")
+
+	log.Info("(((((((stream close")
 
 }
 

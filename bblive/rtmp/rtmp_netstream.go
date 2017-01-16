@@ -445,7 +445,7 @@ func (s *RtmpNetStream) readLoop() {
 					log.Warn(err)
 				}
 			} else if vm, ok := msg.(*VideoMessage); ok {
-				log.Info("VIDEO", ">>>>", vm.Header().Timestamp, vm.Header().MessageLength)
+				log.Debug("VIDEO", ">>>>", vm.Header().Timestamp, vm.Header().MessageLength, s.Name())
 				sp := NewMediaFrame()
 				sp.Timestamp = vm.RtmpHeader.Timestamp
 				if vm.RtmpHeader.Timestamp == 0xffffff {
@@ -458,7 +458,7 @@ func (s *RtmpNetStream) readLoop() {
 				sp.VideoFrameType = one >> 4
 				sp.VideoCodecID = one & 0x0f
 				if sp.IFrame() {
-					log.Info("VIDE", "@@@@@@@", "IFRAME")
+					log.Debug("VIDE @@@@@@ IFrame", s.Name())
 				}
 				err = s.obj.WriteFrame(sp)
 				if err != nil {

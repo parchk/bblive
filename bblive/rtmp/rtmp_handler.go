@@ -1,6 +1,7 @@
 package rtmp
 
 import (
+	"bbllive/conf"
 	"bbllive/log"
 	"time"
 )
@@ -77,8 +78,13 @@ func (p *DefaultServerHandler) OnPlaying(s *RtmpNetStream) error {
 		s.obj = obj
 	}
 	s.obj.Attach(s)
-	//go s.writeLoop()
-	go s.writeLoopF()
+
+	if conf.AppConf.GOPCache {
+		go s.writeLoop()
+	} else {
+		go s.writeLoopF()
+	}
+
 	return nil
 }
 

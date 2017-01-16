@@ -37,7 +37,6 @@ func init() {
 func Timer() {
 
 	for {
-
 		select {
 		case <-time.After(10 * time.Second):
 			objects.IterCb(func(key string, v interface{}) {
