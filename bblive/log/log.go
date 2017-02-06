@@ -18,6 +18,7 @@ func init() {
 
 	SetLogger("file", logfilepath)
 	SetLevel(conf.AppConf.LogLvl)
+	logs.SetLogger("console")
 }
 
 // Log levels to control the logging output.

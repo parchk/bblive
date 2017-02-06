@@ -4,13 +4,20 @@ import (
 	"bbllive/conf"
 	"bbllive/log"
 	_ "bbllive/util"
+	"fmt"
+	stdlog "log"
 	"net"
+	"os"
+	"reflect"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	_ "github.com/sdming/gosnow"
 	cmap "github.com/streamrail/concurrent-map"
+
+	_ "github.com/rcrowley/goagain"
 )
 
 var (
@@ -21,6 +28,8 @@ var (
 	level    int
 	//snow     *gosnow.SnowFlake
 	srvid int
+
+	srv *Server
 )
 
 func init() {
@@ -32,6 +41,9 @@ func init() {
 	logfile = conf.AppConf.LogPath
 	level = conf.AppConf.LogLvl
 	srvid = conf.AppConf.Srvid
+
+	stdlog.SetFlags(stdlog.Lmicroseconds | stdlog.Lshortfile)
+	stdlog.SetPrefix(fmt.Sprintf("pid:%d ", syscall.Getpid()))
 }
 
 func Timer() {
@@ -44,6 +56,33 @@ func Timer() {
 			})
 		}
 	}
+}
+
+func WaitStop() {
+
+	log.Info("rtmp server watie $$$$$$")
+	srv.Wp.Wait()
+
+}
+
+func GetListenFD() (uintptr, error) {
+
+	file, err := srv.l.File()
+
+	if err != nil {
+		return 0, err
+	}
+
+	return file.Fd(), nil
+}
+
+func SetEnvs() error {
+	_, err := srv.setEnvs()
+	return err
+}
+
+func GetConFile() []*os.File {
+	return srv.files
 }
 
 func ListenAndServe(addr string) error {
@@ -60,11 +99,12 @@ func ListenAndServe(addr string) error {
 			return err
 		}
 	*/
-	srv := &Server{
+	srv = &Server{
 		Addr:         addr,
 		ReadTimeout:  time.Duration(time.Second * 30),
 		WriteTimeout: time.Duration(time.Second * 30),
-		Lock:         new(sync.Mutex)}
+		Lock:         new(sync.Mutex),
+		Wp:           new(sync.WaitGroup)}
 
 	//go Timer()
 
@@ -76,6 +116,9 @@ type Server struct {
 	ReadTimeout  time.Duration //读超时
 	WriteTimeout time.Duration //写超时
 	Lock         *sync.Mutex
+	Wp           *sync.WaitGroup
+	l            *net.TCPListener
+	files        []*os.File
 }
 
 /*
@@ -91,18 +134,128 @@ func gen_next_stream_id(chunkid uint32) uint32 {
 	return gstreamid
 }
 
+func (p *Server) ListenFromFD() (l net.Listener, err error) {
+
+	var fd uintptr
+
+	if _, err = fmt.Sscan(os.Getenv("GOAGAIN_FD"), &fd); nil != err {
+		return nil, err
+	}
+
+	l, err = net.FileListener(os.NewFile(fd, os.Getenv("GOAGAIN_NAME")))
+
+	if nil != err {
+		return nil, err
+	}
+
+	switch l.(type) {
+	case *net.TCPListener, *net.UnixListener:
+	default:
+		err = fmt.Errorf(
+			"file descriptor is %T not *net.TCPListener or *net.UnixListener",
+			l,
+		)
+		return nil, err
+	}
+	if err = syscall.Close(int(fd)); nil != err {
+		return nil, err
+	}
+
+	return l, nil
+}
+
+func (p *Server) ListenFD(addr string) (net.Listener, error) {
+
+	l, err := net.Listen("tcp", addr)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return l, nil
+}
+
+func (p *Server) setEnvs() (fd uintptr, err error) {
+
+	v := reflect.ValueOf(p.l).Elem().FieldByName("fd").Elem()
+
+	fd = uintptr(v.FieldByName("sysfd").Int())
+
+	_, _, e1 := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, 0)
+
+	if 0 != e1 {
+		err = e1
+		return
+	}
+
+	if err = os.Setenv("GOAGAIN_FD", fmt.Sprint(fd)); nil != err {
+		return
+	}
+	addr := p.l.Addr()
+
+	if err = os.Setenv(
+		"GOAGAIN_NAME",
+		fmt.Sprintf("%s:%s->", addr.Network(), addr.String()),
+	); nil != err {
+		return
+	}
+
+	return
+}
+
+func (p *Server) SetCon(con net.Conn) {
+
+	tcp_con, ok := con.(*net.TCPConn)
+
+	if !ok {
+		log.Error("server SetCon error con not tcpcon")
+		return
+	}
+
+	fild, err := tcp_con.File()
+
+	if err != nil {
+		log.Error("server SetCon file error :", err)
+		return
+	}
+
+	p.files = append(p.files, fild)
+}
+
 func (p *Server) ListenAndServe() error {
+
 	addr := p.Addr
 	if addr == "" {
 		addr = ":1935"
 	}
-	l, err := net.Listen("tcp", addr)
+
+	var err error
+	var l net.Listener
+
+	if os.Getenv("GRACEFUL_RESTART") == "true" {
+		l, err = p.ListenFromFD()
+	} else {
+		l, err = p.ListenFD(addr)
+	}
+
 	if err != nil {
 		return err
 	}
+
+	tcpl := l.(*net.TCPListener)
+
+	p.l = tcpl
+
+	//l, err := net.Listen("tcp", addr)
+
+	if err != nil {
+		return err
+	}
+
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go p.loop(l)
 	}
+
 	return nil
 }
 
@@ -112,6 +265,7 @@ func (srv *Server) loop(l net.Listener) error {
 	for {
 		grw, e := l.Accept()
 		if e != nil {
+			log.Error("Accept error :", e)
 			if ne, ok := e.(net.Error); ok && ne.Temporary() {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
@@ -127,6 +281,8 @@ func (srv *Server) loop(l net.Listener) error {
 			}
 			return e
 		}
+		log.Info("Accept pid :", os.Getpid())
+		srv.SetCon(grw)
 		tempDelay = 0
 		go serve(srv, grw)
 	}
@@ -185,7 +341,7 @@ func serve(srv *Server, con net.Conn) {
 		return
 	}
 	conn.connected = true
-	newNetStream(conn, shandler, nil).readLoop()
+	newNetStream(conn, shandler, nil, srv.Wp).readLoop()
 }
 
 func getNumber(obj interface{}, key string) float64 {

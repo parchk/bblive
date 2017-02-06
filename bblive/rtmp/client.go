@@ -25,7 +25,7 @@ func Connect(url string) (s *RtmpNetStream, err error) {
 	if err != nil {
 		return
 	}
-	s = newNetStream(conn, nil, clientHandler)
+	s = newNetStream(conn, nil, clientHandler, nil)
 	s.play(file, "live")
 	return
 }

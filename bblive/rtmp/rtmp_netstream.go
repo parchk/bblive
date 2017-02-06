@@ -4,6 +4,7 @@ import (
 	"bbllive/log"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -97,9 +98,10 @@ type RtmpNetStream struct {
 	err        error
 	closed     chan bool
 	fnotify    chan *MediaFrame
+	wp         *sync.WaitGroup
 }
 
-func newNetStream(conn *RtmpNetConnection, sh ServerHandler, ch ClientHandler) (s *RtmpNetStream) {
+func newNetStream(conn *RtmpNetConnection, sh ServerHandler, ch ClientHandler, wg *sync.WaitGroup) (s *RtmpNetStream) {
 	s = new(RtmpNetStream)
 	s.nsid = nsid()
 	s.conn = conn
@@ -108,6 +110,7 @@ func newNetStream(conn *RtmpNetConnection, sh ServerHandler, ch ClientHandler) (
 	s.notify = make(chan *int, 30)
 	s.closed = make(chan bool)
 	s.fnotify = make(chan *MediaFrame, 100)
+	s.wp = wg
 	return
 }
 
@@ -128,6 +131,11 @@ func (s *RtmpNetStream) Close() error {
 	if s.isClosed() {
 		return nil
 	}
+
+	log.Info("RtmpNetStream close")
+
+	s.wp.Done()
+
 	close(s.closed)
 	s.conn.Close()
 	s.notifyClosed()
@@ -411,10 +419,14 @@ func (s *RtmpNetStream) readLoop() {
 	conn := s.conn
 	var err error
 	var msg RtmpMessage
+
+	s.wp.Add(1)
+	log.Info("********* add pid ", os.Getpid())
 	for {
 		if s.isClosed() {
 			break
 		}
+
 		try.This(func() {
 			msg, err = readMessage(conn)
 			if err != nil {
