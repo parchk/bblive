@@ -173,6 +173,12 @@ func ListenAndServe(addr string) error {
 	return srv.ListenAndServe()
 }
 
+func StopListen() error {
+	err := srv.l.Close()
+	srv.CloseFlag = true
+	return err
+}
+
 type Server struct {
 	Addr         string        //监听地址
 	ReadTimeout  time.Duration //读超时
@@ -181,6 +187,7 @@ type Server struct {
 	Wp           *sync.WaitGroup
 	l            *net.TCPListener
 	files        []*os.File
+	CloseFlag    bool
 }
 
 /*
@@ -329,6 +336,8 @@ func (p *Server) ListenAndServe() error {
 		return err
 	}
 
+	p.l = l
+
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go p.loop(l)
 	}
@@ -340,6 +349,10 @@ func (srv *Server) loop(l net.Listener) error {
 	defer l.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
+		if srv.CloseFlag {
+			log.Info("stop Accep listen pid :", os.Getpid())
+			return nil
+		}
 		grw, e := l.Accept()
 		if e != nil {
 			log.Error("Accept error :", e)

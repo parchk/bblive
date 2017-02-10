@@ -171,6 +171,13 @@ func ListenFD(addr string) (net.Listener, error) {
 	return l, nil
 }
 
+func StopWebListen() error {
+
+	err := web_l.Close()
+
+	return err
+}
+
 func ListenAndServerHttpFlv(addr string) error {
 
 	mux := http.NewServeMux()
@@ -207,6 +214,8 @@ func ListenAndServerHttpFlv(addr string) error {
 	if err != nil {
 		return err
 	}
+
+	web_l = l
 
 	return server.Serve(l)
 }

@@ -199,6 +199,8 @@ func main() {
 				// Wait for all conections to be finished
 			*/
 			rtmp.Gracennet_net.StartProcess()
+			rtmp.StopListen()
+			rtmp.StopWebListen()
 			rtmp.WaitStop()
 
 			log.Info(os.Getpid(), "Server gracefully shutdown")
