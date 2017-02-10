@@ -3,6 +3,7 @@ package rtmp
 import (
 	"bbllive/conf"
 	"bbllive/log"
+	"errors"
 	"fmt"
 	"net"
 	_ "net"
@@ -10,16 +11,15 @@ import (
 	"os"
 	"reflect"
 	"syscall"
-	"time"
-
-	_ "github.com/rcrowley/goagain"
 )
 
+var web_l net.Listener
+
 type HttpFlvPlayHandle struct {
-	l net.Listener
 }
 
 func (*HttpFlvPlayHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	err := r.ParseForm()
 
 	if err != nil {
@@ -38,9 +38,7 @@ func (*HttpFlvPlayHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !found {
 
-		t := time.After(time.Second * 3)
-
-		<-t
+		NObje.WaitObj(objname)
 
 		obj, found = FindObject(objname)
 
@@ -77,26 +75,26 @@ func (*HttpFlvPlayHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Info("(((((((stream close")
 
 	srv.Wp.Done()
-
 }
 
-func SetPocWebEvn(l net.Listener) (err error) {
+func SetPocWebEvn() (fd uintptr, err error, strs []string) {
 
-	v := reflect.ValueOf(l).Elem().FieldByName("fd").Elem()
+	v := reflect.ValueOf(web_l).Elem().FieldByName("fd").Elem()
 
-	fd := uintptr(v.FieldByName("sysfd").Int())
+	fd = uintptr(v.FieldByName("sysfd").Int())
+	/*
+		_, _, e1 := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, 0)
 
-	_, _, e1 := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, 0)
-
-	if 0 != e1 {
-		err = e1
-		return
-	}
-
+		if 0 != e1 {
+			err = e1
+			return
+		}
+	*/
 	if err = os.Setenv("GOAGAIN_FD_WEB", fmt.Sprint(fd)); nil != err {
 		return
 	}
-	addr := l.Addr()
+
+	addr := web_l.Addr()
 
 	if err = os.Setenv(
 		"GOAGAIN_NAME_WEB",
@@ -104,6 +102,9 @@ func SetPocWebEvn(l net.Listener) (err error) {
 	); nil != err {
 		return
 	}
+
+	strs = append(strs, fmt.Sprintf("%s=%s", "GOAGAIN_FD_WEB", fmt.Sprint(fd)))
+	strs = append(strs, fmt.Sprintf("%s=%s", "GOAGAIN_NAME_WEB", fmt.Sprintf("%s:%s->", addr.Network(), addr.String())))
 
 	return
 }
@@ -116,7 +117,9 @@ func ListenFromFD() (l net.Listener, err error) {
 		return nil, err
 	}
 
-	l, err = net.FileListener(os.NewFile(fd, os.Getenv("GOAGAIN_NAME_WEB")))
+	log.Info("Http ListenFromFD fd :", fd)
+
+	l, err = net.FileListener(os.NewFile(4, os.Getenv("GOAGAIN_NAME_WEB")))
 
 	if nil != err {
 		return nil, err
@@ -140,6 +143,23 @@ func ListenFromFD() (l net.Listener, err error) {
 	return l, nil
 }
 
+func GetHttpFlvListFD() (uintptr, *os.File, net.Addr, error) {
+
+	listener, ok := web_l.(*net.TCPListener)
+
+	if !ok {
+		return 0, nil, nil, errors.New("httpflv_global is not TCPListener")
+	}
+
+	file, err := listener.File()
+
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	return file.Fd(), file, listener.Addr(), nil
+}
+
 func ListenFD(addr string) (net.Listener, error) {
 
 	l, err := net.Listen("tcp", addr)
@@ -154,20 +174,35 @@ func ListenFD(addr string) (net.Listener, error) {
 func ListenAndServerHttpFlv(addr string) error {
 
 	mux := http.NewServeMux()
-	handle := &HttpFlvPlayHandle{}
-	mux.Handle("/play", handle)
-	server := &http.Server{Addr: addr, Handler: mux}
 
-	var err error
-	var l net.Listener
+	mux.Handle("/play", &HttpFlvPlayHandle{})
+	//mux.HandleFunc("/play", ServerHandlFunc)
 
-	if os.Getenv("GRACEFUL_RESTART") == "true" {
-		l, err = ListenFromFD()
-	} else {
-		l, err = ListenFD(addr)
+	server := &http.Server{Handler: mux}
+	/*
+		var err error
+		var l net.Listener
+
+		if os.Getenv("GRACEFUL_RESTART") == "true" {
+			l, err = ListenFromFD()
+		} else {
+			l, err = ListenFD(addr)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		web_l = l
+	*/
+
+	addr_s, err := net.ResolveTCPAddr("tcp", addr)
+
+	if err != nil {
+		return err
 	}
 
-	SetPocWebEvn(l)
+	l, err := Gracennet_net.ListenTCP("tcp", addr_s)
 
 	if err != nil {
 		return err

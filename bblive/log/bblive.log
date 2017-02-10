@@ -47,3 +47,6 @@
 2016/11/03 18:26:02 [D] [main.go:28] kkk 10,ssssssss
 2016/11/03 18:26:02 [D] [main.go:35] rtmp ListenAndServe : 127.0.0.1:9993 
 2016/11/03 18:26:02 [D] [main.go:43] ListenAndServerHttpFlv : 127.0.0.1:9994 
+2017/02/09 11:39:27 [D] [main.go:28] kkk 10,ssssssss
+2017/02/09 11:39:27 [D] [main.go:35] rtmp ListenAndServe : 127.0.0.1:9993 
+2017/02/09 11:39:27 [D] [main.go:43] ListenAndServerHttpFlv : 127.0.0.1:9994 

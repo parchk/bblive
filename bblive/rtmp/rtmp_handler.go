@@ -55,18 +55,18 @@ type DefaultServerHandler struct {
 }
 
 func (p *DefaultServerHandler) OnPublishing(s *RtmpNetStream) error {
-
 	if obj, found := findObject(s.streamName); !found {
+
 		obj, err := new_streamObject(s.streamName, 90*time.Second, true, 10)
 		if err != nil {
 			return err
 		}
 		s.obj = obj
+		NObje.NotifyObje(s.streamName)
 	} else {
 		s.obj = obj
 	}
 	return nil
-
 }
 
 func (p *DefaultServerHandler) OnPlaying(s *RtmpNetStream) error {

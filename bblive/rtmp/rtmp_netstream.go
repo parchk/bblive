@@ -99,6 +99,7 @@ type RtmpNetStream struct {
 	closed     chan bool
 	fnotify    chan *MediaFrame
 	wp         *sync.WaitGroup
+	Wobj       chan string
 }
 
 func newNetStream(conn *RtmpNetConnection, sh ServerHandler, ch ClientHandler, wg *sync.WaitGroup) (s *RtmpNetStream) {
@@ -438,7 +439,7 @@ func (s *RtmpNetStream) readLoop() {
 				return
 			}
 			if am, ok := msg.(*AudioMessage); ok {
-				//log.Info("AUDIO", ">>>>", am.Header().Timestamp, am.Header().MessageLength)
+				log.Debug("AUDIO", ">>>>", am.Header().Timestamp, am.Header().MessageLength)
 				sp := NewMediaFrame()
 				sp.Timestamp = am.RtmpHeader.Timestamp
 				if am.RtmpHeader.Timestamp == 0xffffff {

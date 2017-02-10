@@ -14,11 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/facebookgo/grace/gracenet"
 	_ "github.com/sdming/gosnow"
 	cmap "github.com/streamrail/concurrent-map"
-
-	_ "github.com/rcrowley/goagain"
 )
+
+var Gracennet_net = &gracenet.Net{}
 
 var (
 	objects = cmap.New()
@@ -32,6 +33,66 @@ var (
 	srv *Server
 )
 
+type NotifyObj struct {
+	Lock sync.RWMutex
+	Lc   map[string]chan string
+}
+
+func (n *NotifyObj) WaitObj(objname string) bool {
+	var cn chan string
+
+	NObje.Lock.RLock()
+
+	ocn, ok := NObje.Lc[objname]
+
+	if ok {
+
+		cn = ocn
+
+	} else {
+
+		cn = make(chan string)
+
+		NObje.Lc[objname] = cn
+	}
+
+	NObje.Lock.RUnlock()
+
+ForEnd:
+	for {
+		select {
+		case <-cn:
+			NObje.Lock.Lock()
+			delete(NObje.Lc, objname)
+			NObje.Lock.Unlock()
+			break ForEnd
+		case <-time.After(time.Second * 2):
+			log.Debug("waite object time out :", objname)
+			return false
+		}
+	}
+
+	return true
+}
+
+func (n *NotifyObj) NotifyObje(objname string) {
+
+	NObje.Lock.RLock()
+	defer NObje.Lock.RUnlock()
+
+	cn, ok := NObje.Lc[objname]
+
+	if ok {
+		select {
+		case cn <- objname:
+		case <-time.After(time.Millisecond * 500):
+			log.Info("OnPublishing notify httpflv obj time out :", objname)
+		}
+	}
+}
+
+var NObje NotifyObj
+
 func init() {
 	/*
 		flag.StringVar(&logfile, "log", "stdout", "-log rtmp.log")
@@ -44,6 +105,8 @@ func init() {
 
 	stdlog.SetFlags(stdlog.Lmicroseconds | stdlog.Lshortfile)
 	stdlog.SetPrefix(fmt.Sprintf("pid:%d ", syscall.Getpid()))
+
+	NObje.Lc = make(map[string]chan string)
 }
 
 func Timer() {
@@ -65,20 +128,19 @@ func WaitStop() {
 
 }
 
-func GetListenFD() (uintptr, error) {
+func GetListenFD() (uintptr, *os.File, net.Addr, error) {
 
 	file, err := srv.l.File()
 
 	if err != nil {
-		return 0, err
+		return 0, nil, nil, err
 	}
 
-	return file.Fd(), nil
+	return file.Fd(), file, srv.l.Addr(), nil
 }
 
-func SetEnvs() error {
-	_, err := srv.setEnvs()
-	return err
+func SetEnvs() (uintptr, error, []string) {
+	return srv.setEnvs()
 }
 
 func GetConFile() []*os.File {
@@ -142,7 +204,9 @@ func (p *Server) ListenFromFD() (l net.Listener, err error) {
 		return nil, err
 	}
 
-	l, err = net.FileListener(os.NewFile(fd, os.Getenv("GOAGAIN_NAME")))
+	log.Info("ListenFromFD fd :", fd)
+
+	l, err = net.FileListener(os.NewFile(3, os.Getenv("GOAGAIN_NAME")))
 
 	if nil != err {
 		return nil, err
@@ -175,19 +239,19 @@ func (p *Server) ListenFD(addr string) (net.Listener, error) {
 	return l, nil
 }
 
-func (p *Server) setEnvs() (fd uintptr, err error) {
+func (p *Server) setEnvs() (fd uintptr, err error, strs []string) {
 
 	v := reflect.ValueOf(p.l).Elem().FieldByName("fd").Elem()
 
 	fd = uintptr(v.FieldByName("sysfd").Int())
+	/*
+		_, _, e1 := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, 0)
 
-	_, _, e1 := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, 0)
-
-	if 0 != e1 {
-		err = e1
-		return
-	}
-
+		if 0 != e1 {
+			err = e1
+			return
+		}
+	*/
 	if err = os.Setenv("GOAGAIN_FD", fmt.Sprint(fd)); nil != err {
 		return
 	}
@@ -199,6 +263,9 @@ func (p *Server) setEnvs() (fd uintptr, err error) {
 	); nil != err {
 		return
 	}
+
+	strs = append(strs, fmt.Sprintf("%s=%s", "GOAGAIN_FD", fmt.Sprint(fd)))
+	strs = append(strs, fmt.Sprintf("%s=%s", "GOAGAIN_NAME", fmt.Sprintf("%s:%s->", addr.Network(), addr.String())))
 
 	return
 }
@@ -228,25 +295,35 @@ func (p *Server) ListenAndServe() error {
 	if addr == "" {
 		addr = ":1935"
 	}
+	/*
+		var err error
+		var l net.Listener
 
-	var err error
-	var l net.Listener
+		if os.Getenv("GRACEFUL_RESTART") == "true" {
+			l, err = p.ListenFromFD()
+		} else {
+			log.Info("listen fd &&&&&&&&&&&&&& pid:", os.Getpid())
+			l, err = p.ListenFD(addr)
+		}
 
-	if os.Getenv("GRACEFUL_RESTART") == "true" {
-		l, err = p.ListenFromFD()
-	} else {
-		l, err = p.ListenFD(addr)
-	}
+		if err != nil {
+			return err
+		}
+
+		tcpl := l.(*net.TCPListener)
+
+		p.l = tcpl
+
+		//l, err := net.Listen("tcp", addr)
+	*/
+
+	addr_s, err := net.ResolveTCPAddr("tcp", addr)
 
 	if err != nil {
 		return err
 	}
 
-	tcpl := l.(*net.TCPListener)
-
-	p.l = tcpl
-
-	//l, err := net.Listen("tcp", addr)
+	l, err := Gracennet_net.ListenTCP("tcp", addr_s)
 
 	if err != nil {
 		return err
@@ -282,7 +359,7 @@ func (srv *Server) loop(l net.Listener) error {
 			return e
 		}
 		log.Info("Accept pid :", os.Getpid())
-		srv.SetCon(grw)
+		//srv.SetCon(grw)
 		tempDelay = 0
 		go serve(srv, grw)
 	}
